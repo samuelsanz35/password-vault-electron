@@ -5,11 +5,6 @@ on:
   push:
     branches: [ main ]
 
-# Ejecuta todos los "run" dentro del subdirectorio del proyecto
-defaults:
-  run:
-    working-directory: password-vault-electron-ci
-
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -18,26 +13,65 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # (Debug) Imprime el árbol del repo para ver dónde están los archivos
+      - name: Print repo tree
+        shell: pwsh
+        run: |
+          Write-Host "== Repo tree =="
+          Get-ChildItem -Recurse -Force | ForEach-Object { $_.FullName }
+
+      # Detecta automáticamente la carpeta que contiene el package.json "correcto"
+      # Prioriza el que tenga electron/electron-builder en deps; si no, coge el primero (excluye .github)
+      - name: Detect project directory
+        id: detect
+        shell: pwsh
+        run: |
+          $candidates = Get-ChildItem -Recurse -Filter package.json | Where-Object { $_.FullName -notmatch "\\.github\\" }
+          if (-not $candidates) { Write-Error "No se encontró ningún package.json en el repo"; exit 1 }
+
+          $target = $null
+          foreach ($p in $candidates) {
+            $j = Get-Content $p.FullName -Raw
+            if ($j -match '"electron-builder"' -or $j -match '"electron"') { $target = $p; break }
+          }
+          if (-not $target) { $target = $candidates | Select-Object -First 1 }
+
+          $dir = Split-Path -Parent $target.FullName
+          "PROJECT_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "pkg_path=$($target.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Proyecto detectado en: $dir"
+          Write-Host "Usando package.json: $($target.FullName)"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
+          cache-dependency-path: ${{ env.PROJECT_DIR }}/package-lock.json
 
-      # Usa npm install (no exige package-lock.json)
+      # Instala dependencias (si hay package-lock usa npm ci; si no, npm install)
       - name: Install dependencies
-        run: npm install
+        shell: pwsh
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install }
 
+      # Compila la UI: si existe script build:ui lo usa; si no, ejecuta Vite directamente
       - name: Build UI
-        run: npm run build:ui
+        shell: pwsh
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          if ($pkg.scripts.'build:ui') { npm run build:ui } else { npx vite build }
 
-      # Genera el instalador .exe (NSIS)
+      # Genera el instalador .exe con electron-builder
       - name: Build installer (electron-builder)
+        working-directory: ${{ env.PROJECT_DIR }}
         run: npx electron-builder --win --x64 --publish=never
 
-      # Sube el .exe como artefacto (ruta relativa al repo)
+      # Sube el .exe como artefacto
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: password-vault-installer
-          path: password-vault-electron-ci/dist/**/*.exe
+          path: ${{ env.PROJECT_DIR }}/dist/**/*.exe
