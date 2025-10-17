@@ -1,0 +1,1 @@
+import { contextBridge, ipcRenderer } from 'electron'; contextBridge.exposeInMainWorld('vault', { getKey: async () => await ipcRenderer.invoke('vault:getKey') });

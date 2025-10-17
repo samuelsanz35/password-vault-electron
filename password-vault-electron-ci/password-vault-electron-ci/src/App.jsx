@@ -1,0 +1,1 @@
+export default function App(){ return <div className='p-6 text-white'>Password Vault (Electron) — el instalador se genera en GitHub Actions. Una vez instalado, ábrela desde el icono.</div> }
