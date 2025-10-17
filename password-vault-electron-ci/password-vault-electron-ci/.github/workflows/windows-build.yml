@@ -1,0 +1,43 @@
+name: Build Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+# Ejecuta todos los "run" dentro del subdirectorio del proyecto
+defaults:
+  run:
+    working-directory: password-vault-electron-ci
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # Usa npm install (no exige package-lock.json)
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build UI
+        run: npm run build:ui
+
+      # Genera el instalador .exe (NSIS)
+      - name: Build installer (electron-builder)
+        run: npx electron-builder --win --x64 --publish=never
+
+      # Sube el .exe como artefacto (ruta relativa al repo)
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: password-vault-installer
+          path: password-vault-electron-ci/dist/**/*.exe
