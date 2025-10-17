@@ -5,6 +5,11 @@ on:
   push:
     branches: [ main ]
 
+# <<— Hacemos que todos los "run" se ejecuten dentro de la carpeta del proyecto
+defaults:
+  run:
+    working-directory: password-vault-electron-ci
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -18,11 +23,15 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      # Usa "npm install" si no tienes package-lock.json
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
-      - name: Build installer (NSIS)
-        run: npm run make
+      - name: Build UI
+        run: npm run build:ui
+
+      - name: Build installer (NSIS) con electron-builder
+        run: npx electron-builder --win --x64 --publish=never
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
